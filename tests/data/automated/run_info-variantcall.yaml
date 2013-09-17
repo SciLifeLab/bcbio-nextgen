@@ -1,8 +1,8 @@
 details:
   - analysis: variant2
     algorithm:
-      #aligner: bwa
-      aligner: novoalign
+      aligner: bwa
+      #aligner: novoalign
       variantcaller: [gatk, samtools, freebayes]
       #variantcaller: gatk-haplotype
       #variantcaller: freebayes

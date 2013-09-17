@@ -28,10 +28,10 @@ custom_algorithms:
 # - Define cores that can be used for multicore programs.
 resources:
   bcbio_variation:
-    dir: /usr/local/share/java/bcbio_variation
-  bcbio_coverage:
-    dir: /usr/local/share/java/bcbio_coverage
-    cores: 4
+    dir: $BCBIO_VARIATION_HOME 
+#  bcbio_coverage:
+#    dir: /usr/local/share/java/bcbio_coverage
+#    cores: 4
   ucsc_bigwig:
     memory: 36g
   bowtie:
@@ -49,28 +49,28 @@ resources:
   gemini:
     cores: 4
   gatk:
-    cores: 2
-    dir: /usr/local/share/java/gatk
+    cores: 8
+    dir: $GATK_HOME
     jvm_opts: ["-Xms750m", "-Xmx2000m"]
   gatk-vqsr:
     jvm_opts: ["-Xms1000m", "-Xmx2500m"]
   picard:
-    cores: 1
-    dir: /usr/local/share/java/picard
+    cores: 8
+    dir: $PICARD_HOME
   snpEff:
-    dir: /usr/local/share/java/snpeff
+    dir: $SNPEFF_HOME
     jvm_opts: ["-Xms750m", "-Xmx3g"]
   varscan:
-    dir: /usr/local/share/java/varscan
+    dir: $VARSCAN_HOME
   mutect:
-    dir: /usr/local/share/java/mutect
-  cram:
-    dir: /usr/local/share/java/cram
+    dir: $MUTECT_HOME
+#  cram:
+#    dir: /usr/local/share/java/cram
   rnaseqc:
-    dir: /usr/local/share/java/RNA-SeQC
-  stampy:
-    dir: ~/install/stampy-1.0.18
-  cortex:
-    dir: ~/install/CORTEX_release_v1.0.5.14
-  vcftools:
-    dir: ~/install/vcftools_0.1.9
+    dir: $RNASEQC_HOME
+#  stampy:
+#    dir: ~/install/stampy-1.0.18
+#  cortex:
+#    dir: ~/install/CORTEX_release_v1.0.5.14
+#  vcftools:
+#    dir: ~/install/vcftools_0.1.9

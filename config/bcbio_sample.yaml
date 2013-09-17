@@ -19,7 +19,8 @@ details:
   # paired.
   - files: [/path/to/1_1-fastq.txt, /path/to/1_2-fastq.txt]
     description: 'Sample 1'
-    genome_build: GRCh37
+    #genome_build: GRCh37
+    genome_build:hg19
     analysis: variant2
     algorithm:
       aligner: novoalign
