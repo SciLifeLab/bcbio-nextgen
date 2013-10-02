@@ -1,26 +1,6 @@
-galaxy_config: universe_wsgi.ini
-algorithm:
-  aligner: bowtie
-  max_errors: 2
-  num_cores: 1
-  platform: illumina
-  recalibrate: false
-  save_diskspace: true
-  upload_fastq: false
+galaxy_config: $GALAXY_CONFIG
+#galaxy_config: $HOME/scilife_bcbb/tests/data/automated/universe_wsgi.ini
 
-# configuration algorithm changes for custom post-processing steps
-custom_algorithms:
-  variant:
-    aligner: bwa
-    recalibrate: gatk
-    snpcall: true
-    coverage_depth: "low" # other options: high
-    coverage_interval: "exome" # other options: genome
-  'RNA-seq':
-    aligner: tophat2
-    transcript_assemble: true
-  'Minimal':
-    aligner: ""
 # Define resources to be used for individual programs on multicore machines.
 # These can be defined specifically for memory and processor availability.
 # Distributed systems
@@ -35,11 +15,13 @@ resources:
   ucsc_bigwig:
     memory: 36g
   bowtie:
-    cores:
+    cores: 8
+  bowtie2:
+    cores: 8
   tophat:
-    cores:
+    cores: 8
   bwa:
-    cores: 4
+    cores: 8
   samtools:
     cores: 4
     memory: 1G
@@ -74,3 +56,29 @@ resources:
 #    dir: ~/install/CORTEX_release_v1.0.5.14
 #  vcftools:
 #    dir: ~/install/vcftools_0.1.9
+
+# General attributes that apply across multiple pipelines
+algorithm:
+  aligner: bowtie2
+  max_errors: 2
+  num_cores: 8
+  platform: illumina
+  recalibrate: false
+  save_diskspace: true
+  upload_fastq: false
+
+# Configuration algorithm changes for specific pipelines
+## configuration algorithm changes for custom post-processing steps
+custom_algorithms:
+  variant:
+    aligner: bwa
+    recalibrate: gatk
+    snpcall: true
+    coverage_depth: "low" # other options: high
+    coverage_interval: "exome" # other options: genome
+  'RNA-seq':
+    aligner: tophat2
+    transcript_assemble: true
+  'Minimal':
+    aligner: ""
+
