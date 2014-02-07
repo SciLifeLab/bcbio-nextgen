@@ -15,14 +15,15 @@ import copy
 from distutils.version import LooseVersion
 import itertools
 
-from bcbio import broad
+from bcbio import bam, broad
 from bcbio.utils import file_exists, safe_makedir
 from bcbio.distributed.transaction import file_transaction
 from bcbio.distributed.split import grouped_parallel_split_combine
+from bcbio.log import logger
 from bcbio.pipeline import config_utils
 from bcbio.pipeline.shared import (process_bam_by_chromosome, subset_variant_regions)
 from bcbio.variation.realign import has_aligned_reads
-from bcbio.variation import annotation, bamprep, multi, phasing, vcfutils, vfilter
+from bcbio.variation import annotation, bamprep, multi, phasing, ploidy, vcfutils, vfilter
 
 # ## GATK Genotype calling
 
@@ -32,7 +33,7 @@ def _shared_gatk_call_prep(align_bams, ref_file, config, dbsnp, region, out_file
     broad_runner = broad.runner_from_config(config)
     broad_runner.run_fn("picard_index_ref", ref_file)
     for x in align_bams:
-        broad_runner.run_fn("picard_index", x)
+        bam.index(x, config)
     coverage_depth = config["algorithm"].get("coverage_depth", "high").lower()
     variant_regions = config["algorithm"].get("variant_regions", None)
     confidence = "4.0" if coverage_depth in ["low"] else "30.0"
@@ -71,6 +72,8 @@ def unified_genotyper(align_bams, items, ref_file, assoc_files,
             with file_transaction(out_file) as tx_out_file:
                 params += ["-T", "UnifiedGenotyper",
                            "-o", tx_out_file,
+                           "-ploidy", (str(ploidy.get_ploidy(items, region))
+                                       if broad_runner.gatk_type() == "restricted" else "2"),
                            "--genotype_likelihoods_model", "BOTH"]
                 broad_runner.run_gatk(params)
     return out_file
@@ -133,18 +136,20 @@ def _gatk_location_hack(args):
 
 # ## Variant filtration -- shared functionality
 
-def variant_filtration(call_file, ref_file, vrn_files, config):
+def variant_filtration(call_file, ref_file, vrn_files, data):
     """Filter variant calls using Variant Quality Score Recalibration.
 
     Newer GATK with Haplotype calling has combined SNP/indel filtering.
     """
-    caller = config["algorithm"].get("variantcaller")
+    caller = data["config"]["algorithm"].get("variantcaller")
+    call_file = ploidy.filter_vcf_by_sex(call_file, data)
     if caller in ["freebayes"]:
-        return vfilter.freebayes(call_file, ref_file, vrn_files, config)
+        return vfilter.freebayes(call_file, ref_file, vrn_files, data["config"])
     # no additional filtration for callers that filter as part of call process
     elif caller in ["samtools", "varscan"]:
         return call_file
     else:
+        config = data["config"]
         snp_file, indel_file = vcfutils.split_snps_indels(call_file, ref_file, config)
         snp_filter_file = _variant_filtration_snp(snp_file, ref_file, vrn_files, config)
         indel_filter_file = _variant_filtration_indel(indel_file, ref_file, vrn_files, config)
@@ -233,10 +238,11 @@ def _variant_filtration_snp(snp_file, ref_file, vrn_files, config):
                                "--tranches_file", tx_tranches])
                 try:
                     broad_runner.new_resources("gatk-vqsr")
-                    broad_runner.run_gatk(params)
+                    broad_runner.run_gatk(params, log_error=False)
                 # Can fail to run if not enough values are present to train. Rerun with regional
                 # filtration approach instead
                 except:
+                    logger.info("VQSR failed due to lack of training data. Using hard filtering.")
                     config["algorithm"]["coverage_interval"] = "regional"
                     return _variant_filtration_snp(snp_file, ref_file, vrn_files, config)
         return _apply_variant_recal(broad_runner, snp_file, ref_file, recal_file,
@@ -266,12 +272,13 @@ def _variant_filtration_indel(snp_file, ref_file, vrn_files, config):
             with file_transaction(recal_file, tranches_file) as (tx_recal, tx_tranches):
                 params.extend(["--recal_file", tx_recal,
                                "--tranches_file", tx_tranches])
-                if LooseVersion(broad_runner.get_gatk_version()) >= LooseVersion("2.7"):
+                if LooseVersion(broad_runner.gatk_major_version()) >= LooseVersion("2.7"):
                     params.extend(["--numBadVariants", "3000"])
                 try:
                     broad_runner.new_resources("gatk-vqsr")
-                    broad_runner.run_gatk(params)
+                    broad_runner.run_gatk(params, log_error=False)
                 except:
+                    logger.info("VQSR failed due to lack of training data. Using hard filtering.")
                     config["algorithm"]["coverage_interval"] = "regional"
                     return _variant_filtration_indel(snp_file, ref_file, vrn_files, config)
         return _apply_variant_recal(broad_runner, snp_file, ref_file, recal_file,

@@ -1,8 +1,10 @@
 """Multiprocessing ready entry points for sample analysis.
 """
-from bcbio import utils
+from bcbio import structural, utils, chipseq
 from bcbio.bam import callable
-from bcbio.pipeline import lane, qcsummary, sample, shared, variation
+from bcbio.ngsalign import alignprep, tophat, star
+from bcbio.pipeline import (disambiguate, lane, qcsummary, sample, shared, variation,
+                            rnaseq)
 from bcbio.variation import (bamprep, coverage, realign, genotype, ensemble, multi, population,
                              recalibrate, validate, vcfutils)
 
@@ -17,12 +19,20 @@ def trim_lane(*args):
 @utils.map_wrap
 def process_alignment(*args):
     return lane.process_alignment(*args)
-process_alignment.metadata = {"resources": ["novoalign", "bwa", "bowtie", "tophat"]}
+process_alignment.metadata = {"resources": ["star", "novoalign", "bwa", "bowtie2",
+                                            "tophat2", "bowtie", "tophat"],
+                              "ensure": {"tophat": tophat.job_requirements,
+                                         "tophat2": tophat.job_requirements,
+                                         "star": star.job_requirements}}
 
 @utils.map_wrap
-def align_prep_full(*args):
-    return lane.align_prep_full(*args)
-align_prep_full.metadata = {"resources": ["novoalign", "bwa", "gatk"]}
+def postprocess_alignment(*args):
+    return lane.postprocess_alignment(*args)
+postprocess_alignment.metadata = {"resources": ["gatk"]}
+
+@utils.map_wrap
+def prep_align_inputs(*args):
+    return alignprep.create_inputs(*args)
 
 @utils.map_wrap
 def merge_sample(*args):
@@ -36,6 +46,7 @@ delayed_bam_merge.metadata = {"resources": ["samtools"]}
 @utils.map_wrap
 def piped_bamprep(*args):
     return bamprep.piped_bamprep(*args)
+piped_bamprep.metadata = {"resources": ["gatk", "picard"]}
 
 @utils.map_wrap
 def prep_recal(*args):
@@ -62,10 +73,16 @@ postprocess_variants.metadata = {"resources": ["gatk-vqsr", "gatk", "snpEff"]}
 @utils.map_wrap
 def pipeline_summary(*args):
     return qcsummary.pipeline_summary(*args)
+pipeline_summary.metadata = {"resources": ["gatk", "picard", "rnaseqc"]}
 
 @utils.map_wrap
 def generate_transcript_counts(*args):
-    return sample.generate_transcript_counts(*args)
+    return rnaseq.generate_transcript_counts(*args)
+
+@utils.map_wrap
+def run_cufflinks(*args):
+    return rnaseq.run_cufflinks(*args)
+run_cufflinks.metadata = {"resources": ["cufflinks"]}
 
 @utils.map_wrap
 def generate_bigwig(*args):
@@ -89,8 +106,12 @@ def concat_variant_files(*args):
     return vcfutils.concat_variant_files(*args)
 
 @utils.map_wrap
+def merge_variant_files(*args):
+    return vcfutils.merge_variant_files(*args)
+
+@utils.map_wrap
 def detect_sv(*args):
-    return variation.detect_sv(*args)
+    return structural.detect_sv(*args)
 
 @utils.map_wrap
 def combine_calls(*args):
@@ -117,3 +138,11 @@ def compare_to_rm(*args):
 def coverage_summary(*args):
     return coverage.summary(*args)
 coverage_summary.metadata = {"resources": ["bcbio_coverage"]}
+
+@utils.map_wrap
+def run_disambiguate(*args):
+    return disambiguate.run(*args)
+
+@utils.map_wrap
+def clean_chipseq_alignment(*args):
+    return chipseq.clean_chipseq_alignment(*args)

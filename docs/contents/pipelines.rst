@@ -24,9 +24,23 @@ and small indel calling:
    -  `FreeBayes`_
    -  `samtools mpileup`_
    -  `cortex\_var`_
+   -  `VarScan`_
 
--  Quality filtering, using either
-   `GATK's Variant Quality Score Recalibrator`_ or hard filtering.
+-  Paired tumor / normal variant calling:
+
+   - `MuTect`_ (version 1.1.5 and above)
+   - `VarScan`_
+
+-  Quality filtering, using either hard filtering or
+   `GATK's Variant Quality Score Recalibrator`_ (VQSR). VQSR
+   requires a large number of variants. Practically this means high
+   depth whole genome variant calling experiments. bcbio-nextgen
+   attempts VQSR with the following :ref:`algorithm-config`
+
+   - ``variantcaller`` is gatk or gatk-haplotype
+   - ``coverage_depth`` is not low
+   - ``coverage_interval`` is genome
+
 -  Annotation of variant effects, using `snpEff`_
 -  Variant exploration and prioritization, using `GEMINI`_
 
@@ -77,9 +91,11 @@ experiment would look like::
 	genome_build: GRCh37
 	analysis: RNA-seq
 	algorithm:
+             aligner: tophat2
 	     quality_format: Standard
 	     trim_reads: read_through
 	     adapters: [truseq, polya]
+             strandedness: unstranded
 
 ``fc_date`` and ``fc_name`` will be combined to form a prefix to name
 intermediate files, you can set them to whatever you like.  ``upload`` is
@@ -107,7 +123,9 @@ RNA-seq libraries, so we want to trim off possible adapter sequences on the ends
 of reads, so ``trim_reads`` is set to ``read_through``, which will also trim off
 poor quality ends. Since your library is a RNA-seq library prepared with the
 TruSeq kit, the set of adapters to trim off are the TruSeq adapters and possible
-polyA tails, so ``adapters`` is set to the both of those.
+polyA tails, so ``adapters`` is set to the both of those. ``strandedness``
+can be set if your library was prepared in a strand-specific manner and can
+be set to firststrand, secondstrand or unstranded (the default).
 
 Multiple samples
 ================
@@ -126,6 +144,7 @@ sample configuration file for that analysis::
 	genome_build: GRCm38
 	analysis: RNA-seq
 	algorithm:
+             aligner: tophat2
 	     quality_format: Standard
 	     trim_reads: read_through
 	     adapters: [nextera, polya]
@@ -134,6 +153,7 @@ sample configuration file for that analysis::
 	genome_build: GRCm38
 	analysis: RNA-seq
 	algorithm:
+             aligner: tophat2
 	     quality_format: Standard
 	     trim_reads: read_through
 	     adapters: [nextera, polya]
@@ -142,6 +162,7 @@ sample configuration file for that analysis::
 	genome_build: GRCm38
 	analysis: RNA-seq
 	algorithm:
+             aligner: tophat2
 	     quality_format: Standard
 	     trim_reads: read_through
 	     adapters: [nextera, polya]
@@ -150,6 +171,7 @@ sample configuration file for that analysis::
 	genome_build: GRCm38
 	analysis: RNA-seq
 	algorithm:
+             aligner: tophat2
 	     quality_format: Standard
 	     trim_reads: read_through
 	     adapters: [nextera, polya]
@@ -199,3 +221,5 @@ templating system.
 .. _parameters: http://bcbio-nextgen.readthedocs.org/en/latest/contents/configuration.html
 .. _template: http://bcbio-nextgen.readthedocs.org/en/latest/contents/configuration.html#automated-sample-configuration
 .. _illumina-rnaseq: http://raw.github.com/chapmanb/bcbio-nextgen/master/config/templates/illumina-rnaseq.yaml
+.. _VarScan: http://varscan.sourceforge.net
+.. _MuTect: http://www.broadinstitute.org/cancer/cga/mutect
