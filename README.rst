@@ -114,6 +114,7 @@ Contributors
 .. _Luca Beltrame: https://github.com/lbeltrame
 .. _Alla Bushoy: https://github.com/abushoy
 .. _Guillermo Carrasco: https://github.com/guillermo-carrasco
+.. _Alla Bushoy: https://github.com/abushoy
 .. _Brad Chapman: https://github.com/chapmanb
 .. _Peter Cock: https://github.com/peterjc
 .. _Mario Giovacchini: https://github.com/mariogiov
