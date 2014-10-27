@@ -109,10 +109,13 @@ Contributors
 - `Paul Tang`_, UCSF
 - `Roman Valls`_, Science for Life Laboratory, Stockholm
 - `Kevin Ying`_, Garvan Institute of Medical Research, Sydney, Australia
+- `Saket Choudhary`_, University Of Southern California
 
 .. _Miika Ahdesmaki: https://github.com/mjafin
 .. _Luca Beltrame: https://github.com/lbeltrame
+.. _Alla Bushoy: https://github.com/abushoy
 .. _Guillermo Carrasco: https://github.com/guillermo-carrasco
+.. _Alla Bushoy: https://github.com/abushoy
 .. _Brad Chapman: https://github.com/chapmanb
 .. _Peter Cock: https://github.com/peterjc
 .. _Mario Giovacchini: https://github.com/mariogiov
@@ -126,6 +129,7 @@ Contributors
 .. _Kevin Ying: https://github.com/kevyin
 .. _Jeff Hammerbacher: https://github.com/hammer
 .. _Matt Edwards: https://github.com/matted
+.. _Saket Choudhary: https://github.com/saketkc
 
 License
 -------
