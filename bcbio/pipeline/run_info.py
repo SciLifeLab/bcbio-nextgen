@@ -12,7 +12,7 @@ import string
 import toolz as tz
 import yaml
 
-from bcbio import utils
+from bcbio import install, utils
 from bcbio.log import logger
 from bcbio.illumina import flowcell
 from bcbio.pipeline import alignment, config_utils, genome
@@ -34,9 +34,6 @@ def organize(dirs, config, run_info_yaml):
     run_details = _run_info_from_yaml(dirs["flowcell"], run_info_yaml, config)
     out = []
     for item in run_details:
-        # add algorithm details to configuration, avoid double specification
-        item["config"] = config_utils.update_w_custom(config, item)
-        item.pop("algorithm", None)
         item["dirs"] = dirs
         if "name" not in item:
             item["name"] = ["", item["description"]]
@@ -44,6 +41,10 @@ def organize(dirs, config, run_info_yaml):
             description = "%s-%s" % (item["name"], clean_name(item["description"]))
             item["name"] = [item["name"], description]
             item["description"] = description
+        # add algorithm details to configuration, avoid double specification
+        item["resources"] = _add_remote_resources(item["resources"])
+        item["config"] = config_utils.update_w_custom(config, item)
+        item.pop("algorithm", None)
         item = add_reference_resources(item)
         # Create temporary directories and make absolute
         if utils.get_in(item, ("config", "resources", "tmp", "dir")):
@@ -79,13 +80,37 @@ def _get_full_paths(fastq_dir, config, config_file):
                                              config_dir)
     return fastq_dir, os.path.dirname(galaxy_config_file), config_dir
 
+# ## Remote resources
+
+def _add_remote_resources(resources):
+    """Retrieve remote resources like GATK/MuTect jars present in S3.
+    """
+    out = copy.deepcopy(resources)
+    for prog, info in resources.iteritems():
+        for key, val in info.iteritems():
+            if key == "jar" and val.startswith(utils.SUPPORTED_REMOTES):
+                store_dir = utils.safe_makedir(os.path.join(os.getcwd(), "inputs", "jars", prog))
+                fname = utils.dl_remotes(val, store_dir, store_dir)
+                version_file = os.path.join(store_dir, "version.txt")
+                if not utils.file_exists(version_file):
+                    version = install.get_gatk_jar_version(prog, fname)
+                    with open(version_file, "w") as out_handle:
+                        out_handle.write(version)
+                else:
+                    with open(version_file) as in_handle:
+                        version = in_handle.read().strip()
+                del out[prog][key]
+                out[prog]["dir"] = store_dir
+                out[prog]["version"] = version
+    return out
+
 # ## Genome reference information
 
 def add_reference_resources(data):
     """Add genome reference information to the item to process.
     """
     aligner = data["config"]["algorithm"].get("aligner", None)
-    data["reference"] = genome.get_refs(data["genome_build"], aligner, data["dirs"]["galaxy"])
+    data["reference"] = genome.get_refs(data["genome_build"], aligner, data["dirs"]["galaxy"], data)
     # back compatible `sam_ref` target
     data["sam_ref"] = utils.get_in(data, ("reference", "fasta", "base"))
     ref_loc = utils.get_in(data, ("config", "resources", "species", "dir"),
@@ -95,7 +120,7 @@ def add_reference_resources(data):
     alt_genome = utils.get_in(data, ("config", "algorithm", "validate_genome_build"))
     if alt_genome:
         data["reference"]["alt"] = {alt_genome:
-                                    genome.get_refs(alt_genome, None, data["dirs"]["galaxy"])["fasta"]}
+                                    genome.get_refs(alt_genome, None, data["dirs"]["galaxy"], data)["fasta"]}
     # Re-enable when we have ability to re-define gemini configuration directory
     if False:
         if population.do_db_build([data], check_gemini=False, need_bam=False):
@@ -204,7 +229,7 @@ def _check_for_misplaced(xs, subkey, other_keys):
 
 ALGORITHM_KEYS = set(["platform", "aligner", "bam_clean", "bam_sort",
                       "trim_reads", "adapters", "custom_trim", "kraken",
-                      "align_split_size", "quality_bin",
+                      "align_split_size", "quality_bin", "rsem",
                       "quality_format", "write_summary",
                       "merge_bamprep", "coverage",
                       "coverage_interval", "ploidy", "indelcaller",
@@ -422,6 +447,7 @@ def _run_info_from_yaml(fc_dir, run_info_yaml, config):
             pass
     global_config = {}
     global_vars = {}
+    resources = {}
     if isinstance(loaded, dict):
         global_config = copy.deepcopy(loaded)
         del global_config["details"]
@@ -429,6 +455,7 @@ def _run_info_from_yaml(fc_dir, run_info_yaml, config):
             fc_name = loaded["fc_name"].replace(" ", "_")
             fc_date = str(loaded["fc_date"]).replace(" ", "_")
         global_vars = global_config.pop("globals", {})
+        resources = global_config.pop("resources", {})
         loaded = loaded["details"]
 
     run_details = []
@@ -462,6 +489,14 @@ def _run_info_from_yaml(fc_dir, run_info_yaml, config):
         item["test_run"] = global_config.get("test_run", False)
         item = _clean_metadata(item)
         item = _clean_algorithm(item)
+        # Add any global resource specifications
+        if "resources" not in item:
+            item["resources"] = {}
+        for prog, pkvs in resources.iteritems():
+            if prog not in item["resources"]:
+                item["resources"][prog] = {}
+            for key, val in pkvs.iteritems():
+                item["resources"][prog][key] = val
         run_details.append(item)
     _check_sample_config(run_details, run_info_yaml)
     return run_details

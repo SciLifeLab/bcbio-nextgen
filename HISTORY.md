@@ -3,6 +3,8 @@
 - Improve tumor/normal calling with FreeBayes, MuTect, VarDict and VarScan by
   validating against DREAM synthetic 3 data.
 - Validate ensemble based calling for somatic analysis using multiple callers.
+- Improve ability to run on Amazon AWS, including up to date interaction with
+  files originally stored in S3 and transfer to S3 on completion with encryption.
 - Avoid race conditions during `bedprep` work on samples with shared input BED
   files. These are now processed sequentially on a single machine to avoid
   conflicts. Thanks to Justin Johnson.
@@ -11,8 +13,15 @@
 - Default to a reduced number of split regions (`nomap_split_targets` defaults
   to 200 instead of 2000) to avoid controller memory issues with large sample
   sizes.
+- Avoid re-calculating depth metrics when running post variant calling
+  annotation with GATK to provide accurate metrics on high depth samples.
+  Thanks to Miika Ahdesmaki.
+- Consistently keep annotations and genotype information for split MNPs from
+  vcfallelicprimitives. Thanks to Pär Larsson.
 - Enable VQSR for large batches of exome samples (50 or more together) to
   coincide with joint calling availability for large populations.
+- Support retrieval of GATK and MuTect jars from S3 to enable integration
+  with bcbio inside Docker.
 - Bump pybedtools version to avoid potential open file handle issues. Thanks to
   Ryan Dale.
 - Move to bgzipped and indexes human_ancestor.fa for LOFTEE to support access

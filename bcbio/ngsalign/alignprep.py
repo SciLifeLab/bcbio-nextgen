@@ -134,10 +134,8 @@ def _find_read_splits(in_file, split_size):
     last = 1
     for chunki in range(num_lines // split_lines + min(1, num_lines % split_lines)):
         new = last + split_lines - 1
-        chunks.append((last, min(new, num_lines - 1)))
-        last = new
-        if chunki > 0:
-            last += 1
+        chunks.append((last, min(new, num_lines)))
+        last = new + 1
     return chunks
 
 # ## bgzip and grabix
@@ -348,7 +346,7 @@ def _bgzip_from_fastq(data):
     config = data["config"]
     grabix = config_utils.get_program("grabix", config)
     needs_convert = config["algorithm"].get("quality_format", "").lower() == "illumina"
-    if in_file.endswith(".gz"):
+    if in_file.endswith(".gz") and not in_file.startswith(utils.SUPPORTED_REMOTES):
         needs_bgzip, needs_gunzip = _check_gzipped_input(in_file, grabix, needs_convert)
     else:
         needs_bgzip, needs_gunzip = True, False
