@@ -70,7 +70,8 @@ def upgrade_bcbio(args):
     if args.tooldir:
         with bcbio_tmpdir():
             print("Upgrading third party tools to latest versions")
-            _symlink_bcbio(args)
+            _symlink_bcbio(args, script="bcbio_nextgen.py")
+            _symlink_bcbio(args, script="bcbio_setup_genome.py")
             upgrade_thirdparty_tools(args, REMOTES)
             print("Third party tools upgrade complete.")
     if args.install_data:
@@ -121,11 +122,11 @@ def _matplotlib_installed():
         return False
     return True
 
-def _symlink_bcbio(args):
-    """Ensure bcbio_nextgen.py symlink in final tool directory.
+def _symlink_bcbio(args, script="bcbio_nextgen.py"):
+    """Ensure a bcbio-nextgen script symlink in final tool directory.
     """
-    bcbio_anaconda = os.path.join(os.path.dirname(sys.executable), "bcbio_nextgen.py")
-    bcbio_final = os.path.join(args.tooldir, "bin", "bcbio_nextgen.py")
+    bcbio_anaconda = os.path.join(os.path.dirname(sys.executable), script)
+    bcbio_final = os.path.join(args.tooldir, "bin", script)
     sudo_cmd = ["sudo"] if args.sudo else []
     if not os.path.exists(bcbio_final):
         if os.path.lexists(bcbio_final):
@@ -184,8 +185,8 @@ def _update_conda_packages():
     conda_bin = os.path.join(os.path.dirname(sys.executable), "conda")
     pkgs = ["biopython", "boto", "cnvkit", "cpat", "cython", "ipython", "lxml",
             "matplotlib", "msgpack-python", "nose", "numpy", "pandas", "patsy", "pycrypto",
-            "pip", "pysam", "pyvcf", "pyyaml", "pyzmq", "reportlab", "requests", "scipy",
-            "setuptools", "sqlalchemy", "statsmodels", "toolz", "tornado"]
+            "pip", "pysam", "pyvcf", "pyyaml", "pyzmq", "reportlab", "requests", "scikit-learn",
+            "scipy", "setuptools", "sqlalchemy", "statsmodels", "toolz", "tornado"]
     channels = ["-c", "https://conda.binstar.org/bcbio"]
     if os.path.exists(conda_bin):
         subprocess.check_call([conda_bin, "install", "--yes", "numpy"])
@@ -363,17 +364,20 @@ def _install_toolplus(args, manifest_dir):
         else:
             raise ValueError("Unexpected toolplus argument: %s %s" (tool.name, tool.fname))
 
+def get_gatk_jar_version(name, fname):
+    if name == "gatk":
+        return broad.get_gatk_version(fname)
+    elif name == "mutect":
+        return broad.get_mutect_version(fname)
+    else:
+        raise ValueError("Unexpected GATK input: %s" % name)
+
 def _install_gatk_jar(name, fname, manifest, system_config, toolplus_dir):
     """Install a jar for GATK or associated tools like MuTect.
     """
     if not fname.endswith(".jar"):
         raise ValueError("--toolplus argument for %s expects a jar file: %s" % (name, fname))
-    if name == "gatk":
-        version = broad.get_gatk_version(fname)
-    elif name == "mutect":
-        version = broad.get_mutect_version(fname)
-    else:
-        raise ValueError("Unexpected GATK input: %s" % name)
+    version = get_gatk_jar_version(name, fname)
     store_dir = utils.safe_makedir(os.path.join(toolplus_dir, name, version))
     shutil.copyfile(fname, os.path.join(store_dir, os.path.basename(fname)))
     _update_system_file(system_config, name, {"dir": store_dir})

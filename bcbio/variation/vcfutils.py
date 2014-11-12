@@ -315,6 +315,10 @@ def combine_variant_files(orig_files, out_file, ref_file, config,
 
     Handles cases where we split files into SNPs/Indels for processing then
     need to merge back into a final file.
+
+    Will parallelize up to 4 cores based on documented recommendations:
+    https://www.broadinstitute.org/gatk/gatkdocs/
+    org_broadinstitute_gatk_tools_walkers_variantutils_CombineVariants.php
     """
     in_pipeline = False
     if isinstance(orig_files, dict):
@@ -341,7 +345,11 @@ def combine_variant_files(orig_files, out_file, ref_file, config,
             if cur_region:
                 params += ["-L", bamprep.region_to_gatk(cur_region),
                            "--interval_set_rule", "INTERSECTION"]
-            jvm_opts = broad.get_gatk_framework_opts(config)
+            cores = tz.get_in(["algorithm", "num_cores"], config, 1)
+            if cores > 1:
+                params += ["-nt", min(cores, 4)]
+            memscale = {"magnitude": 0.9 * cores, "direction": "increase"} if cores > 1 else None
+            jvm_opts = broad.get_gatk_framework_opts(config, memscale=memscale)
             cmd = [config_utils.get_program("gatk-framework", config)] + jvm_opts + params
             do.run(cmd, "Combine variant files")
     if out_file.endswith(".gz"):

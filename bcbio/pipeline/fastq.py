@@ -1,13 +1,16 @@
 """Pipeline utilities to retrieve FASTQ formatted files for processing.
 """
 import os
+import sys
 
 from bcbio import bam, broad, utils
 from bcbio.bam import fastq
 from bcbio.bam import cram
 from bcbio.pipeline import alignment
-from bcbio.utils import file_exists, safe_makedir
+from bcbio.utils import file_exists, safe_makedir, splitext_plus
 from bcbio.provenance import do
+from bcbio.distributed.transaction import file_transaction
+
 
 def get_fastq_files(item):
     """Retrieve fastq files for the given lane, ready to process.
@@ -82,3 +85,35 @@ def _convert_bam_to_fastq(in_file, work_dir, item, dirs, config):
     if out2 and os.path.getsize(out2) == 0:
         out2 = None
     return [out1, out2]
+
+
+def merge(files, out_file, config):
+    """merge smartly fastq files. It recognizes paired fastq files."""
+    pair1 = [fastq_file[0] for fastq_file in files]
+    if len(files[0]) > 1:
+        path = splitext_plus(out_file)
+        pair1_out_file = path[0] + "_R1" + path[1]
+        pair2 = [fastq_file[1] for fastq_file in files]
+        pair2_out_file = path[0] + "_R2" + path[1]
+        _merge_list_fastqs(pair1, pair1_out_file, config)
+        _merge_list_fastqs(pair2, pair2_out_file, config)
+        return [pair1_out_file, pair2_out_file]
+    else:
+        return _merge_list_fastqs(pair1, out_file, config)
+
+
+def _merge_list_fastqs(files, out_file, config):
+    """merge list of fastq files into one"""
+    if not all(map(fastq.is_fastq, files)):
+        raise ValueError("Not all of the files to merge are fastq files: %s " % (files))
+    assert all(map(utils.file_exists, files)), ("Not all of the files to merge "
+                                                "exist: %s" % (files))
+    if len(files) == 1:
+        sys.symlink(files[0], out_file)
+    if not os.path.exists(out_file):
+        gz_files = [_gzip_fastq(fn) for fn in files]
+        with file_transaction(out_file) as file_txt_out:
+            files_str = " ".join(list(gz_files))
+            cmd = "cat {files_str} > {file_txt_out}".format(**locals())
+            do.run(cmd, "merge fastq files")
+    return out_file

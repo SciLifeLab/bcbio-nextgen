@@ -1,3 +1,4 @@
+#!/usr/bin/env python -E
 """
 Script to set up a custom genome for bcbio-nextgen
 """
@@ -127,6 +128,10 @@ if __name__ == "__main__":
     args.gtf = os.path.abspath(args.gtf) if args.gtf else None
     if args.gff3:
         args.gtf = gff3_to_gtf(args.gtf)
+
+    # always make a sequence dictionary
+    if "seq" not in args.indexes:
+        args.indexes.append("seq")
 
     env.system_install = genome_dir
     prepare_tx = os.path.join(cbl["dir"], "utils", "prepare_tx_gff.py")
