@@ -133,7 +133,7 @@ in the same folder than the input CSV :``project1-merged.csv``. Later, it can be
     
     bcbio_nextgen -w template project1/config/project1-template.yaml project1-merged.csv merged/*fastq
 
-The new CSV file will looks like::
+The new CSV file will look like::
 
         samplename,description,batch,phenotype,sex,coverage_interval
         sample1.fastq,sample1,batch1,normal,female,genome
@@ -149,6 +149,22 @@ See more examples at `parallelize pipeline`_.
 .. _parallelize pipeline: https://bcbio-nextgen.readthedocs.org/en/latest/contents/parallel.html
 
 .. _sample-configuration:
+
+In case of paired reads, the CSV file should contain all files::
+
+        samplename,description,batch,phenotype,sex,coverage_interval
+        file1_R1.fastq,sample1,batch1,normal,female,genome
+        file2_R1.fastq,sample1,batch1,normal,female,genome
+        file1_R2.fastq,sample1,batch1,normal,femela,genome
+        file2_R2.fastq,sample1,batch1,normal,female,genome
+
+The script will try to guess the paired files the same way than ``bcbio_nextgen.py -w template`` does. It would detect paired files if the difference among two files is only _R1/_R2 or -1/-2 or _1/_2 or .1/.2
+
+The output CSV will look like and is compatible with bcbio::
+
+        samplename,description,batch,phenotype,sex,coverage_interval
+        sample1,sample1,batch1,normal,female,genome
+
 
 Sample information
 ~~~~~~~~~~~~~~~~~~
@@ -256,11 +272,16 @@ Your Galaxy universe_wsgi.ini configuration needs to have
 
 S3 parameters:
 
-- ``bucket`` AWS bucket to upload to
-- ``access_key_id`` AWS access key ID from Amazon credentials page
-- ``secret_access_key`` AWS secret key ID from Amazon credentials page
+- ``bucket`` AWS bucket to direct output.
+- ``folder`` A folder path within the AWS bucket to prefix the output.
 - ``reduced_redundancy`` Flag to determine if we should store S3 data
   with reduced redundancy: cheaper but less reliable [false, true]
+
+For S3 access credentials, set the standard environmental variables,
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, or use `IAM access roles
+<http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/iam-roles-for-amazon-ec2.html>`_
+with an instance profile on EC2 to give your instances permission to create
+temporary S3 access.
 
 Globals
 ~~~~~~~
@@ -414,7 +435,7 @@ Variant calling
    If true, will perform streaming duplicate marking with `samblaster`_ for
    paired reads and `biobambam's bammarkduplicates`_ for single end reads.
 -  ``recalibrate`` Perform base quality score recalibration on the
-   aligned BAM file. Defaults to no recalibration. [false, gatk]
+   aligned BAM file. Defaults to gatk. [false, gatk]
 -  ``realign`` Perform realignment around indels on the aligned BAM
    file. Defaults to no realignment since realigning callers like FreeBayes and
    GATK HaplotypeCaller handle this as part of the calling process. [false, gatk]
@@ -499,7 +520,10 @@ Post-processing
 - ``tools_off`` Specify third party tools to skip as part of analysis
   pipeline. Enables turning off specific components of pipelines if not
   needed. ``gemini`` provides a `GEMINI database`_ of variants for downstream
-  query during variant calling pipelines.
+  query during variant calling pipelines. ``vardict_somatic_filter`` runs
+  a post calling filter to remove variants found in normal samples. ``bwa-mem``
+  forces use of original bwa aln alignment. Without this, we use bwa mem with
+  70bp or longer reads.
   Default: [] -- all tools on.
 
 .. _CRAM format: http://www.ebi.ac.uk/ena/about/cram_toolkit

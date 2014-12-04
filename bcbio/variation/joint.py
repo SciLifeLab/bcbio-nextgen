@@ -12,10 +12,6 @@ import contextlib
 import math
 import os
 
-try:
-    import pybedtools
-except ImportError:
-    pybedtools = None
 import pysam
 import toolz as tz
 
@@ -33,6 +29,7 @@ SUPPORTED = {"general": ["freebayes", "platypus", "samtools"],
 def _get_callable_regions(data):
     """Retrieve regions to parallelize by from callable regions, variant regions or chromosomes
     """
+    import pybedtools
     callable_files = data.get("callable_regions") or data.get("variant_regions")
     if callable_files:
         assert len(callable_files) == 1
@@ -143,9 +140,9 @@ def _fix_orig_vcf_refs(data):
     if variantcaller:
         data["vrn_file_orig"] = data["vrn_file"]
     for i, sub in enumerate(data["group_orig"]):
-        sub_vc = tz.get_in(("config", "algorithm", "variantcaller"), sub)
-        if sub_vc:
-            sub["vrn_file_orig"] = sub.pop("vrn_file")
+        sub_vrn = sub.pop("vrn_file", None)
+        if sub_vrn:
+            sub["vrn_file_orig"] = sub_vrn
             data["group_orig"][i] = sub
     return data
 

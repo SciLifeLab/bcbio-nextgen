@@ -7,12 +7,10 @@ import random
 import gzip
 
 from Bio import SeqIO
-
 from bcbio.distributed.transaction import file_transaction
 from bcbio.log import logger
 from bcbio import utils
 from bcbio.utils import open_possible_gzip
-from bcbio.provenance import do
 
 
 @utils.memoize_outfile(stem=".groom")
@@ -237,33 +235,10 @@ def estimate_read_length(fastq_file, quality_format="fastq-sanger", nreads=1000)
 def open_fastq(in_file):
     """ open a fastq file, using gzip if it is gzipped
     """
+    if in_file.startswith("s3:"):
+        return utils.s3_handle(in_file)
     _, ext = os.path.splitext(in_file)
     if ext == ".gz":
         return gzip.open(in_file, 'rb')
     if ext in [".fastq", ".fq"]:
         return open(in_file, 'r')
-
-
-def merge(files, out_file, config):
-    """merge fastq files"""
-    assert all(map(is_fastq, files)), ("Not all of the files to merge are not fastq "
-                                       "files: %s " % (files))
-    assert all(map(utils.file_exists, files)), ("Not all of the files to merge "
-                                                "exist: %s" % (files))
-    if len(files) == 1:
-        return files[0]
-    fn = set()
-    cat = "cat"
-    if files[0].endswith("gz"):
-        cat = "zcat"
-    for f in files:
-        fn.add(f)
-    if not os.path.exists(out_file):
-        with file_transaction(out_file) as file_txt_out:
-            file_txt_out = file_txt_out
-            files_str = " ".join(list(fn))
-            cmd = "{cat} {files_str} | gzip  > {file_txt_out}".format(**locals())
-            do.run(cmd, "merge fastq files")
-    return out_file
-
-

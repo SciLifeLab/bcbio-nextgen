@@ -86,7 +86,8 @@ def _merge_system_configs(host_config, container_config, out_file=None):
                     out[k][pname] = resources
                 else:
                     for rname, rval in resources.iteritems():
-                        if rname in set(["cores", "jvm_opts", "memory"]):
+                        if (rname in set(["cores", "jvm_opts", "memory"])
+                              or pname in set(["gatk", "mutect"])):
                             if pname not in out[k]:
                                 out[k][pname] = {}
                             out[k][pname][rname] = rval
@@ -238,7 +239,7 @@ def get_jar(base_name, dname):
 # ## Retrieval and update to configuration from arguments
 
 def is_std_config_arg(x):
-    return isinstance(x, dict) and "algorithm" in x and "resources" in x and not "files" in x
+    return isinstance(x, dict) and "algorithm" in x and "resources" in x and "files" not in x
 
 def is_nested_config_arg(x):
     return isinstance(x, dict) and "config" in x and is_std_config_arg(x["config"])

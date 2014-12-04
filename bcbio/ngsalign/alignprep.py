@@ -7,10 +7,6 @@ import shutil
 import subprocess
 
 import toolz as tz
-try:
-    import pybedtools
-except ImportError:
-    pybedtools = None
 
 from bcbio import bam, utils
 from bcbio.bam import cram
@@ -75,7 +71,8 @@ def parallel_multiplier(items):
     """
     multiplier = 1
     for data in (x[0] for x in items):
-        if data["config"]["algorithm"].get("align_split_size"):
+        if (tz.get_in(["config", "algorithm", "align_split_size"], data) or
+              tz.get_in(["algorithm", "align_split_size"], data)):
             multiplier += 50
     return multiplier
 
@@ -134,10 +131,8 @@ def _find_read_splits(in_file, split_size):
     last = 1
     for chunki in range(num_lines // split_lines + min(1, num_lines % split_lines)):
         new = last + split_lines - 1
-        chunks.append((last, min(new, num_lines - 1)))
-        last = new
-        if chunki > 0:
-            last += 1
+        chunks.append((last, min(new, num_lines)))
+        last = new + 1
     return chunks
 
 # ## bgzip and grabix
@@ -167,6 +162,7 @@ def _bgzip_from_cram(cram_file, dirs, data):
     Returns a list with a single file, for single end CRAM files, or two
     files for paired end input.
     """
+    import pybedtools
     region_file = (tz.get_in(["config", "algorithm", "variant_regions"], data)
                    if tz.get_in(["config", "algorithm", "coverage_interval"], data) in ["regional", "exome"]
                    else None)
@@ -348,7 +344,7 @@ def _bgzip_from_fastq(data):
     config = data["config"]
     grabix = config_utils.get_program("grabix", config)
     needs_convert = config["algorithm"].get("quality_format", "").lower() == "illumina"
-    if in_file.endswith(".gz"):
+    if in_file.endswith(".gz") and not in_file.startswith(utils.SUPPORTED_REMOTES):
         needs_bgzip, needs_gunzip = _check_gzipped_input(in_file, grabix, needs_convert)
     else:
         needs_bgzip, needs_gunzip = True, False

@@ -1,8 +1,34 @@
-## 0.8.3 (in progress)
+## 0.8.5 (in progress)
+
+- Run `vcffixup` following `vcfallelicprimitves` in FreeBayes, Platypus and
+  Scalpel calling to prevent introduction of problematic AN INFO fields.
+- Use `mincores` specification to ipython-cluster-helper to combine single core
+  jobs into a single submission job for better memory shared on resource
+  constrained systems.
+- Switch to seaborn as matplotlib wrapper, from prettplotlib.
+
+## 0.8.4 (29 November 2014)
+
+- Improvements in VarDict calling on somatic samples.
+- Fix compatibility issue with bedtools 2.22.0 when calculating genome coverage.
+- Fix joint calling upload to avoid redundant inclusion of full VCF file in
+  individual sample directories.
+- Fixes for inclusion of GATK jars inside Docker contains when running
+  distributed jobs.
+- Enable generation of STAR indexes on demand to handle running STAR on AWS
+  instances.
+- Re-organize code to prepare samples and reference genomes so it runs inside
+  distributed processing components. This isolates process to Docker containers
+  on AWS and also enables complex operations like preparing reference genomes on
+  demand.
+
+## 0.8.3 (19 November 2014)
 
 - Improve tumor/normal calling with FreeBayes, MuTect, VarDict and VarScan by
   validating against DREAM synthetic 3 data.
 - Validate ensemble based calling for somatic analysis using multiple callers.
+- Improve ability to run on Amazon AWS, including up to date interaction with
+  files originally stored in S3 and transfer to S3 on completion with encryption.
 - Avoid race conditions during `bedprep` work on samples with shared input BED
   files. These are now processed sequentially on a single machine to avoid
   conflicts. Thanks to Justin Johnson.
@@ -11,8 +37,15 @@
 - Default to a reduced number of split regions (`nomap_split_targets` defaults
   to 200 instead of 2000) to avoid controller memory issues with large sample
   sizes.
+- Avoid re-calculating depth metrics when running post variant calling
+  annotation with GATK to provide accurate metrics on high depth samples.
+  Thanks to Miika Ahdesmaki.
+- Consistently keep annotations and genotype information for split MNPs from
+  vcfallelicprimitives. Thanks to Pär Larsson.
 - Enable VQSR for large batches of exome samples (50 or more together) to
   coincide with joint calling availability for large populations.
+- Support retrieval of GATK and MuTect jars from S3 to enable integration
+  with bcbio inside Docker.
 - Bump pybedtools version to avoid potential open file handle issues. Thanks to
   Ryan Dale.
 - Move to bgzipped and indexes human_ancestor.fa for LOFTEE to support access

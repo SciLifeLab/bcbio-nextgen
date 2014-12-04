@@ -95,8 +95,6 @@ def _run_freebayes_caller(align_bams, items, ref_file, assoc_files,
                 bam.index(align_bam, config)
             freebayes = config_utils.get_program("freebayes", config)
             vcffilter = config_utils.get_program("vcffilter", config)
-            vcfallelicprimitives = config_utils.get_program("vcfallelicprimitives", config)
-            vcfstreamsort = config_utils.get_program("vcfstreamsort", config)
             input_bams = " ".join("-b %s" % x for x in align_bams)
             opts = " ".join(_freebayes_options_from_config(items, config, out_file, region))
             # Recommended options from 1000 genomes low-complexity evaluation
@@ -107,7 +105,9 @@ def _run_freebayes_caller(align_bams, items, ref_file, assoc_files,
             compress_cmd = "| bgzip -c" if out_file.endswith("gz") else ""
             fix_ambig = vcfutils.fix_ambiguous_cl()
             cmd = ("{freebayes} -f {ref_file} {input_bams} {opts} | "
-                   "{vcffilter} -f 'QUAL > 5' -s | {fix_ambig} | {vcfallelicprimitives} | {vcfstreamsort} "
+                   "{vcffilter} -f 'QUAL > 5' -s | {fix_ambig} | "
+                   "vcfallelicprimitives --keep-info --keep-geno | vcffixup | vcfstreamsort | "
+                   "vt normalize -r {ref_file} -q - 2> /dev/null | vcfuniqalleles "
                    "{compress_cmd} > {tx_out_file}")
             do.run(cmd.format(**locals()), "Genotyping with FreeBayes", {})
     ann_file = annotation.annotate_nongatk_vcf(out_file, align_bams,
@@ -145,8 +145,9 @@ def _run_freebayes_paired(align_bams, items, ref_file, assoc_files,
                   "{paired.tumor_bam} {paired.normal_bam} "
                   "| vcffilter -f 'QUAL > 5' -s "
                   "| {py_cl} -x 'bcbio.variation.freebayes.call_somatic(x)' "
-                  "| {fix_ambig} | vcfallelicprimitives --keep-info --keep-geno "
-                  "| vt normalize -q -r {ref_file} - "
+                  "| {fix_ambig} | "
+                  "vcfallelicprimitives --keep-info --keep-geno | vcffixup | vcfstreamsort | "
+                  "vt normalize -r {ref_file} -q - 2> /dev/null | vcfuniqalleles "
                   "{compress_cmd} > {tx_out_file}")
             bam.index(paired.tumor_bam, config)
             bam.index(paired.normal_bam, config)
@@ -160,6 +161,8 @@ def _run_freebayes_paired(align_bams, items, ref_file, assoc_files,
 
 def _check_lods(parts, tumor_thresh, normal_thresh):
     """Ensure likelihoods for tumor and normal pass thresholds.
+
+    Skipped if no FreeBayes GL annotations available.
     """
     try:
         gl_index = parts[8].split(":").index("GL")
@@ -186,18 +189,30 @@ def _check_freqs(parts):
     which indicates a contamination or persistent error.
     """
     thresh_ratio = 2.7
-    ao_index = parts[8].split(":").index("AO")
-    ro_index = parts[8].split(":").index("RO")
+    try:  # FreeBayes
+        ao_index = parts[8].split(":").index("AO")
+        ro_index = parts[8].split(":").index("RO")
+    except ValueError:
+        ao_index, ro_index = None, None
+    try:  # VarDict
+        af_index = parts[8].split(":").index("AF")
+    except ValueError:
+        af_index = None
+    if af_index is None and ao_index is None:
+        raise NotImplementedError("Unexpected format annotations: %s" % parts[0])
     def _calc_freq(item):
         try:
-            ao = sum([int(x) for x in item.split(":")[ao_index].split(",")])
-            ro = int(parts[9].split(":")[ro_index])
-            freq = ao / float(ao + ro)
-        except (IndexError, ValueError):
+            if ao_index is not None and ro_index is not None:
+                ao = sum([int(x) for x in item.split(":")[ao_index].split(",")])
+                ro = int(item.split(":")[ro_index])
+                freq = ao / float(ao + ro)
+            elif af_index is not None:
+                freq = float(item.split(":")[af_index])
+        except (IndexError, ValueError, ZeroDivisionError):
             freq = 0.0
         return freq
     tumor_freq, normal_freq = _calc_freq(parts[9]), _calc_freq(parts[10])
-    return normal_freq <= 0.001 or normal_freq < tumor_freq / thresh_ratio
+    return normal_freq <= 0.001 or normal_freq <= tumor_freq / thresh_ratio
 
 def call_somatic(line):
     """Call SOMATIC variants from tumor/normal calls, adding REJECT filters and SOMATIC flag.
@@ -217,24 +232,28 @@ def call_somatic(line):
     at tuned sensitivity/precision. Tuning done on DREAM synthetic 3 dataset evaluations.
 
     We also check that the frequency of the tumor exceeds the frequency of the normal by
-    a threshold to avoid calls that are low frequency in both tumor and normal.
+    a threshold to avoid calls that are low frequency in both tumor and normal. This supports
+    both FreeBayes and VarDict output frequencies.
     """
     # Thresholds are like phred scores, so 3.5 = phred35
     tumor_thresh, normal_thresh = 3.5, 3.5
     if line.startswith("#CHROM"):
         headers = ['##INFO=<ID=SOMATIC,Number=0,Type=Flag,Description="Somatic event">',
-                   '##FILTER=<ID=REJECT,Description="Not SOMATIC by likelihoods; tumor: phred%s, normal phred%s.">'
-                   % (int(tumor_thresh * 10), int(normal_thresh * 10))]
+                   ('##FILTER=<ID=REJECT,Description="Not somatic due to normal call frequency '
+                    'or phred likelihoods: tumor: %s, normal %s.">')
+                    % (int(tumor_thresh * 10), int(normal_thresh * 10))]
         return "\n".join(headers) + "\n" + line
     elif line.startswith("#"):
         return line
     else:
         parts = line.split("\t")
         if _check_lods(parts, tumor_thresh, normal_thresh) and _check_freqs(parts):
-            parts[6] = "PASS"
             parts[7] = parts[7] + ";SOMATIC"
         else:
-            parts[6] = "REJECT"
+            if parts[6] in set([".", "PASS"]):
+                parts[6] = "REJECT"
+            else:
+                parts[6] += ";REJECT"
         line = "\t".join(parts)
         return line
 

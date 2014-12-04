@@ -9,6 +9,7 @@ from bcbio import bam, broad, utils
 from bcbio.utils import file_exists, get_in, open_gzipsafe, remove_safe
 from bcbio.distributed.transaction import file_transaction
 from bcbio.variation.realign import has_aligned_reads
+from bcbio.pipeline import config_utils
 from bcbio.pipeline.shared import subset_variant_regions
 from bcbio.variation import bamprep, vcfutils, scalpel
 from bcbio.variation.vcfutils import bgzip_and_index
@@ -58,6 +59,9 @@ def _config_params(base_config, assoc_files, region, out_file):
     if region:
         params += ["-L", bamprep.region_to_gatk(region), "--interval_set_rule",
                    "INTERSECTION"]
+    resources = config_utils.get_resources("mutect", base_config)
+    if resources.get("options") is not None:
+        params += [str(x) for x in resources.get("options", [])]
     return params
 
 def _mutect_call_prep(align_bams, items, ref_file, assoc_files,
@@ -108,11 +112,12 @@ def mutect_caller(align_bams, items, ref_file, assoc_files, region=None,
               not all(has_aligned_reads(x, region) for x in align_bams)):
                 vcfutils.write_empty_vcf(out_file)
                 return
-        with file_transaction(config, out_file_mutect) as tx_out_file:
+        out_file_orig = "%s-orig%s" % utils.splitext_plus(out_file_mutect)
+        with file_transaction(config, out_file_orig) as tx_out_file:
             # Rationale: MuTect writes another table to stdout, which we don't need
             params += ["--vcf", tx_out_file, "-o", os.devnull]
             broad_runner.run_mutect(params)
-        _rename_allelic_fraction_field(out_file_mutect, config)
+        out_file_mutect = _rename_allelic_fraction_field(out_file_orig, config, out_file_mutect)
         indelcaller = vcfutils.get_indelcaller(base_config)
         is_paired = "-I:normal" in params
         if "scalpel" in indelcaller.lower():
@@ -200,23 +205,18 @@ def _SID_call_prep(align_bams, items, ref_file, assoc_files, region=None, out_fi
                    "INTERSECTION"]
     return params
 
-def _rename_allelic_fraction_field(orig_file, config):
+def _rename_allelic_fraction_field(orig_file, config, out_file):
     """Rename allelic fraction field in mutect output
        from FA to FREQ to standarize with other tools
     """
-    tmp_file = orig_file.replace(".vcf.gz", "-fix.vcf")
-    with file_transaction(config, tmp_file) as tx_in_file:
-        with open(tx_in_file, 'w') as out_handle:
-            with open_gzipsafe(orig_file) as handle:
-                for line in handle:
+    out_file_noc = out_file.replace(".vcf.gz", ".vcf")
+    with file_transaction(config, out_file_noc) as tx_out_file:
+        with open_gzipsafe(orig_file) as in_handle:
+            with open(tx_out_file, 'w') as out_handle:
+                for line in in_handle:
                     if line.startswith("##FORMAT=<ID=FA"):
                         line = line.replace("=FA", "=FREQ")
                     if not line.startswith("#"):
                         line = line.replace("FA", "FREQ")
                     out_handle.write(line)
-    out_file = orig_file.replace(".gz", "")
-    remove_safe(orig_file)
-    shutil.move(tmp_file, out_file)
-    with open(tmp_file, "w") as out_handle:
-        out_handle.write("Moved to {0}".format(out_file))
-    out_file = bgzip_and_index(out_file, config)
+    return bgzip_and_index(out_file_noc, config)

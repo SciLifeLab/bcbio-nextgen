@@ -41,9 +41,12 @@ def _special_dbkey_maps(dbkey, ref_file):
         vep_dir = os.path.normpath(os.path.join(base_dir, "vep"))
         other_dir = os.path.relpath(os.path.normpath(os.path.join(base_dir, os.pardir, remaps[dbkey], "vep")),
                                     base_dir)
-        if not os.path.lexists(vep_dir):
-            os.symlink(other_dir, vep_dir)
-        return vep_dir
+        if os.path.exists(other_dir):
+            if not os.path.lexists(vep_dir):
+                os.symlink(other_dir, vep_dir)
+            return vep_dir
+        else:
+            return None
     else:
         return None
 
@@ -153,7 +156,7 @@ def _get_loftee(data):
     if not ancestral_file or not os.path.exists(ancestral_file):
         ancestral_file = "false"
     annotations = ["LoF", "LoF_filter", "LoF_flags"]
-    args = ["--plugin", "LoF,human_ancestor_fa=%s" % ancestral_file]
+    args = ["--plugin", "LoF,human_ancestor_fa:%s" % ancestral_file]
     return args, annotations
 
 # ## snpEff variant effects
@@ -163,8 +166,7 @@ def snpeff_effects(data):
     """
     vcf_in = data["vrn_file"]
     if vcfutils.vcf_has_variants(vcf_in):
-        vcf_file = _run_snpeff(vcf_in, "vcf", data)
-        return vcf_file
+        return _run_snpeff(vcf_in, "vcf", data)
 
 def _snpeff_args_from_config(data):
     """Retrieve snpEff arguments supplied through input configuration.
@@ -228,9 +230,12 @@ def get_cmd(cmd_name, datadir, config):
     return cmd.format(**locals())
 
 def _run_snpeff(snp_in, out_format, data):
+    """Run effects prediction with snpEff, skipping if snpEff database not present.
+    """
     snpeff_db, datadir = get_db(data)
-    assert datadir is not None, \
-        "Did not find snpEff resources in genome configuration: %s" % data["genome_resources"]
+    if not snpeff_db:
+        return None
+
     assert os.path.exists(os.path.join(datadir, snpeff_db)), \
         "Did not find %s snpEff genome data in %s" % (snpeff_db, datadir)
     snpeff_cmd = get_cmd("eff", datadir, data["config"])

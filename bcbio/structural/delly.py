@@ -115,13 +115,13 @@ def _prep_subsampled_bams(data, work_dir):
 
     https://groups.google.com/d/msg/delly-users/xmia4lwOd1Q/uaajoBkahAIJ
 
-    Subsamples correctly aligned reads to 50 million based on speedseq defaults and
+    Subsamples correctly aligned reads to 100 million based on speedseq defaults and
     evaluations on NA12878 whole genome data:
 
     https://github.com/cc2qe/speedseq/blob/ca624ba9affb0bd0fb88834ca896e9122639ec94/bin/speedseq#L1102
     """
     full_bam, sr_bam, disc_bam = sshared.get_split_discordants(data, work_dir)
-    ds_bam = bam.downsample(full_bam, data, 5e7, read_filter="-F 'not secondary_alignment and proper_pair'",
+    ds_bam = bam.downsample(full_bam, data, 1e8, read_filter="-F 'not secondary_alignment and proper_pair'",
                             always_run=True, work_dir=work_dir)
     out_bam = "%s-final%s" % utils.splitext_plus(ds_bam)
     if not utils.file_exists(out_bam):
@@ -189,7 +189,7 @@ def run(items):
                                  in itertools.product(sshared.get_sv_chroms(items, exclude_file), sv_types)],
                                 config, parallel)
     out_file = "%s.vcf.gz" % sshared.outname_from_inputs(bytype_vcfs)
-    combo_vcf = vcfutils.combine_variant_files(bytype_vcfs, out_file, ref_file, items[0]["config"])
+    combo_vcf = vcfutils.combine_variant_files(bytype_vcfs, out_file, ref_file, config)
     out = []
     for data in items:
         if "sv" not in data:

@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 
 from bcbio.pipeline import config_utils
 from bcbio.distributed.transaction import file_transaction, tx_tmpdir
@@ -7,15 +8,16 @@ from bcbio.utils import (safe_makedir, file_exists, is_gzipped)
 from bcbio.provenance import do
 from bcbio import bam, utils
 from bcbio.log import logger
+from bcbio.pipeline import datadict as dd
 
 CLEANUP_FILES = ["Aligned.out.sam", "Log.out", "Log.progress.out"]
 ALIGN_TAGS = ["NH", "HI", "NM", "MD", "AS"]
 
 def align(fastq_file, pair_file, ref_file, names, align_dir, data):
     config = data["config"]
-    out_prefix = os.path.join(align_dir, names["lane"])
+    out_prefix = os.path.join(align_dir, dd.get_lane(data))
     out_file = out_prefix + "Aligned.out.sam"
-    out_dir = os.path.join(align_dir, "%s_star" % names["lane"])
+    out_dir = os.path.join(align_dir, "%s_star" % dd.get_lane(data))
 
     if not ref_file:
         logger.error("STAR index not found. We don't provide the STAR indexes "
@@ -46,14 +48,30 @@ def align(fastq_file, pair_file, ref_file, names, align_dir, data):
                                 "unstranded").lower()
     if strandedness == "unstranded":
         cmd += " --outSAMstrandField intronMotif "
+
+    if dd.get_rsem(data):
+        cmd += " --quantMode TranscriptomeSAM "
+
     with tx_tmpdir(data) as tmp_dir:
         sam_to_bam = bam.sam_to_bam_stream_cmd(config)
         sort = bam.sort_cmd(config, tmp_dir)
         cmd += "| {sam_to_bam} | {sort} -o {tx_final_out} "
-        run_message = "Running STAR aligner on %s and %s." % (fastq_file, ref_file)
+        run_message = "Running STAR aligner on %s and %s" % (fastq_file, ref_file)
         with file_transaction(data, final_out) as tx_final_out:
             do.run(cmd.format(**locals()), run_message, None)
+
+    if dd.get_rsem(data):
+        transcriptome_file = _move_transcriptome_file(out_dir, names)
     return final_out
+
+def _move_transcriptome_file(out_dir, names):
+    out_file = os.path.join(out_dir, "{0}.transcriptome.bam".format(names["sample"]))
+    if not file_exists(out_file):
+        tmp_file = os.path.join(out_dir, os.pardir,
+                                "{0}Aligned.toTranscriptome.out.bam".format(names["lane"]))
+        shutil.move(tmp_file, out_file)
+    return out_file
+
 
 def _read_group_option(names):
     rg_id = names["rg"]
@@ -77,3 +95,22 @@ def remap_index_fn(ref_file):
     """Map sequence references to equivalent star indexes
     """
     return os.path.join(os.path.dirname(os.path.dirname(ref_file)), "star")
+
+def index(ref_file, out_dir, data):
+    """Create a STAR index in the defined reference directory.
+    """
+    (ref_dir, local_file) = os.path.split(ref_file)
+    gtf_file = os.path.join(ref_dir, os.pardir, "rnaseq", "ref-transcripts.gtf")
+    if not utils.file_exists(gtf_file):
+        raise ValueError("%s not found, could not create a star index." % (gtf_file))
+    if not utils.file_exists(out_dir):
+        with tx_tmpdir(data, os.path.dirname(out_dir)) as tx_out_dir:
+            num_cores = dd.get_cores(data)
+            cmd = ("STAR --genomeDir {tx_out_dir} --genomeFastaFiles {ref_file} "
+                   "--runThreadN {num_cores} "
+                   "--runMode genomeGenerate --sjdbOverhang 99 --sjdbGTFfile {gtf_file}")
+            do.run(cmd.format(**locals()), "Index STAR")
+            if os.path.exists(out_dir):
+                shutil.rmtree(out_dir)
+            shutil.move(tx_out_dir, out_dir)
+    return out_dir
