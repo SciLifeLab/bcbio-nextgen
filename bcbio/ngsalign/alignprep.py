@@ -7,10 +7,6 @@ import shutil
 import subprocess
 
 import toolz as tz
-try:
-    import pybedtools
-except ImportError:
-    pybedtools = None
 
 from bcbio import bam, utils
 from bcbio.bam import cram
@@ -75,7 +71,8 @@ def parallel_multiplier(items):
     """
     multiplier = 1
     for data in (x[0] for x in items):
-        if data["config"]["algorithm"].get("align_split_size"):
+        if (tz.get_in(["config", "algorithm", "align_split_size"], data) or
+              tz.get_in(["algorithm", "align_split_size"], data)):
             multiplier += 50
     return multiplier
 
@@ -165,6 +162,7 @@ def _bgzip_from_cram(cram_file, dirs, data):
     Returns a list with a single file, for single end CRAM files, or two
     files for paired end input.
     """
+    import pybedtools
     region_file = (tz.get_in(["config", "algorithm", "variant_regions"], data)
                    if tz.get_in(["config", "algorithm", "coverage_interval"], data) in ["regional", "exome"]
                    else None)

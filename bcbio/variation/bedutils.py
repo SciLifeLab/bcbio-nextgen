@@ -2,6 +2,7 @@
 """
 import os
 import shutil
+import sys
 
 import toolz as tz
 
@@ -11,20 +12,32 @@ from bcbio.pipeline import config_utils
 from bcbio.provenance import do
 from bcbio.variation import vcfutils
 
-def clean_file(in_file, data, prefix=""):
+def clean_file(in_file, data, prefix="", bedprep_dir=None):
     """Prepare a clean sorted input BED file without headers
     """
     if in_file:
-        bedprep_dir = utils.safe_makedir(os.path.join(data["dirs"]["work"], "bedprep"))
+        if not bedprep_dir:
+            bedprep_dir = utils.safe_makedir(os.path.join(data["dirs"]["work"], "bedprep"))
         out_file = os.path.join(bedprep_dir, "%s%s" % (prefix, os.path.basename(in_file))).replace(".gz", "")
         if not utils.file_exists(out_file):
             with file_transaction(data, out_file) as tx_out_file:
+                py_cl = os.path.join(os.path.dirname(sys.executable), "py")
                 cat_cmd = "zcat" if in_file.endswith(".gz") else "cat"
                 cmd = ("{cat_cmd} {in_file} | grep -v ^track | grep -v ^browser | "
+                       "{py_cl} -x 'bcbio.variation.bedutils.remove_bad(x)' | "
                        "sort -k1,1 -k2,2n > {tx_out_file}")
                 do.run(cmd.format(**locals()), "Prepare cleaned BED file", data)
         vcfutils.bgzip_and_index(out_file, data["config"], remove_orig=False)
         return out_file
+
+def remove_bad(line):
+    """Remove non-increasing BED lines which will cause variant callers to choke.
+    """
+    parts = line.strip().split("\t")
+    if int(parts[2]) > int(parts[1]):
+        return line
+    else:
+        return None
 
 def merge_overlaps(in_file, data):
     """Merge bed file intervals to avoid overlapping regions.

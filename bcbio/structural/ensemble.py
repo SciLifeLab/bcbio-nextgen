@@ -5,17 +5,16 @@ the evidence from each input.
 """
 import fileinput
 import os
+import shutil
 
-try:
-    import pybedtools
-except ImportError:
-    pybedtools = None
 import toolz as tz
 import vcf
 
 from bcbio import utils
 from bcbio.distributed.transaction import file_transaction
 from bcbio.pipeline import shared
+from bcbio.structural import validate
+from bcbio.variation import bedutils
 
 # ## Conversions to simplified BED files
 
@@ -45,16 +44,20 @@ def _get_svtype(rec):
 def _cnvbed_to_bed(in_file, caller, out_file):
     """Convert cn_mops CNV based bed files into flattened BED
     """
-
+    import pybedtools
     with open(out_file, "w") as out_handle:
         for feat in pybedtools.BedTool(in_file):
             out_handle.write("\t".join([feat.chrom, str(feat.start), str(feat.end),
                                         "cnv%s_%s" % (feat.score, caller)])
                              + "\n")
 
+def _copy_file(in_file, caller, out_file):
+    shutil.copy(in_file, out_file)
+
 CALLER_TO_BED = {"lumpy": _vcf_to_bed,
                  "delly": _vcf_to_bed,
-                 "cn_mops": _cnvbed_to_bed}
+                 "cn_mops": _cnvbed_to_bed,
+                 "wham": _copy_file}
 
 def _create_bed(call, base_file, data):
     """Create a simplified BED file from caller specific input.
@@ -74,23 +77,35 @@ def _create_bed(call, base_file, data):
 def summarize(calls, data):
     """Summarize results from multiple callers into a single flattened BED file.
     """
+    import pybedtools
     sample = tz.get_in(["rgnames", "sample"], data)
     work_dir = utils.safe_makedir(os.path.join(data["dirs"]["work"], "structural",
                                                sample, "ensemble"))
     out_file = os.path.join(work_dir, "%s-ensemble.bed" % sample)
-    if not utils.file_exists(out_file):
-        with file_transaction(data, out_file) as tx_out_file:
-            with shared.bedtools_tmpdir(data):
-                input_beds = filter(lambda x: x is not None,
-                                    [_create_bed(c, out_file, data) for c in calls])
-                if len(input_beds) > 0:
-                    all_file = "%s-all.bed" % utils.splitext_plus(tx_out_file)[0]
-                    with open(all_file, "w") as out_handle:
-                        for line in fileinput.input(input_beds):
-                            out_handle.write(line)
-                    pybedtools.BedTool(all_file).sort(stream=True)\
-                      .merge(c=4, o="distinct", delim=",").saveas(tx_out_file)
+    with shared.bedtools_tmpdir(data):
+        input_beds = filter(lambda x: x is not None,
+                            [_create_bed(c, out_file, data) for c in calls])
+    if len(input_beds) > 0:
+        size_beds = []
+        for e_start, e_end in validate.EVENT_SIZES:
+            base, ext = os.path.splitext(out_file)
+            size_out_file = "%s-%s_%s%s" % (base, e_start, e_end, ext)
+            if not utils.file_exists(size_out_file):
+                with file_transaction(data, size_out_file) as tx_out_file:
+                    with shared.bedtools_tmpdir(data):
+                        all_file = "%s-all.bed" % utils.splitext_plus(tx_out_file)[0]
+                        with open(all_file, "w") as out_handle:
+                            for line in fileinput.input(input_beds):
+                                chrom, start, end = line.split()[:3]
+                                size = int(end) - int(start)
+                                if size >= e_start and size < e_end:
+                                    out_handle.write(line)
+                        pybedtools.BedTool(all_file).sort(stream=True)\
+                          .merge(c=4, o="distinct", delim=",").saveas(tx_out_file)
+            size_beds.append(size_out_file)
+        out_file = bedutils.combine(size_beds, out_file, data["config"])
     if utils.file_exists(out_file):
+        bedprep_dir = utils.safe_makedir(os.path.join(os.path.dirname(out_file), "bedprep"))
         calls.append({"variantcaller": "ensemble",
-                      "vrn_file": out_file})
+                      "vrn_file": bedutils.clean_file(out_file, data, bedprep_dir=bedprep_dir)})
     return calls

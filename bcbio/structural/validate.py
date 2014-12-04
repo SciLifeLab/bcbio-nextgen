@@ -10,19 +10,22 @@ import os
 
 import toolz as tz
 import numpy as np
+import pandas as pd
 try:
-    import pybedtools
+    import matplotlib as mpl
+    mpl.use('Agg', force=True)
+    import matplotlib.pyplot as plt
 except ImportError:
-    pybedtools = None
+    mpl, plt = None, None
 try:
-    import pandas as pd
-    import prettyplotlib as ppl
+    import seaborn as sns
 except ImportError:
-    pd, ppl = None, None
+    sns = None
 
+from bcbio.log import logger
 from bcbio import utils
 
-_EVENT_SIZES = [(1, 250), (250, 1000), (1000, 5000), (5000, 25000), (25000, int(1e6))]
+EVENT_SIZES = [(1, 250), (250, 1000), (1000, 5000), (5000, 25000), (25000, int(1e6))]
 
 def _stat_str(x, n):
     if n > 0:
@@ -34,6 +37,7 @@ def _stat_str(x, n):
 def _evaluate_one(caller, svtype, size_range, ensemble, truth, exclude):
     """Compare a ensemble results for a caller against a specific caller and SV type.
     """
+    import pybedtools
     def cnv_matches(name):
         """Check for CNV matches -- XXX hardcoded for diploid comparisons.
         """
@@ -47,13 +51,20 @@ def _evaluate_one(caller, svtype, size_range, ensemble, truth, exclude):
                 return False
         else:
             return False
+    def wham_matches(name):
+        """Flexibly handle WHAM comparisons, allowing DUP/DEL matches during comparisons.
+        """
+        allowed = set(["DUP", "DEL"])
+        curtype, curcaller = name.split("_")[:2]
+        return curcaller == "wham" and curtype in allowed and svtype in allowed
     def in_size_range(feat):
         minf, maxf = size_range
         size = feat.end - feat.start
         return size >= minf and size < maxf
     def is_caller_svtype(feat):
         for name in feat.name.split(","):
-            if (name.startswith(svtype) or cnv_matches(name)) and (caller == "ensemble" or name.endswith(caller)):
+            if ((name.startswith(svtype) or cnv_matches(name) or wham_matches(name))
+                  and (caller == "ensemble" or name.endswith(caller))):
                 return True
         return False
     exfeats = pybedtools.BedTool(exclude)
@@ -78,7 +89,7 @@ def _evaluate_multi(callers, truth_svtypes, ensemble, exclude):
                 writer.writerow(["svtype", "size", "caller", "sensitivity", "precision"])
                 dfwriter.writerow(["svtype", "size", "caller", "metric", "value", "label"])
                 for svtype, truth in truth_svtypes.items():
-                    for size in _EVENT_SIZES:
+                    for size in EVENT_SIZES:
                         str_size = "%s-%s" % size
                         for caller in callers:
                             evalout = _evaluate_one(caller, svtype, size, ensemble, truth, exclude)
@@ -92,18 +103,22 @@ def _evaluate_multi(callers, truth_svtypes, ensemble, exclude):
 def _plot_evaluation(df_csv):
     """Provide plot of evaluation metrics, stratified by event size.
     """
-    if ppl is None:
+    if mpl is None or plt is None or sns is None:
+        not_found = ", ".join([x for x in ['mpl', 'plt', 'sns'] if eval(x) is None])
+        logger.info("No validation plot. Missing imports: %s" % not_found)
         return None
-    out_file = "%s.pdf" % os.path.splitext(df_csv)[0]
+
+    out_file = "%s.png" % os.path.splitext(df_csv)[0]
+    sns.set(style='white')
     if not utils.file_uptodate(out_file, df_csv):
         metrics = ["sensitivity", "precision"]
         df = pd.read_csv(df_csv).fillna("0%")
-        fig, axs = ppl.subplots(len(_EVENT_SIZES), len(metrics))
+        fig, axs = plt.subplots(len(EVENT_SIZES), len(metrics), tight_layout=True)
         callers = sorted(df["caller"].unique())
         if "ensemble" in callers:
             callers.remove("ensemble")
             callers.append("ensemble")
-        for i, size in enumerate(_EVENT_SIZES):
+        for i, size in enumerate(EVENT_SIZES):
             size_label = "%s to %sbp" % size
             size = "%s-%s" % size
             for j, metric in enumerate(metrics):
@@ -111,18 +126,22 @@ def _plot_evaluation(df_csv):
                 ax.get_xaxis().set_ticks([])
                 ax.spines['bottom'].set_visible(False)
                 ax.spines['left'].set_visible(False)
-                ax.set_xlim(0, 100.0)
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.set_xlim(0, 125.0)
                 if i == 0:
                     ax.set_title(metric, size=12, y=1.2)
                 vals, labels = _get_plot_val_labels(df, size, metric, callers)
-                ppl.barh(ax, np.arange(len(vals)), vals, yticklabels=callers)
+                ax.barh(np.arange(len(vals)), vals)
                 if j == 0:
                     ax.tick_params(axis='y', which='major', labelsize=8)
-                    ax.text(80, 4.2, size_label, fontsize=10)
+                    ax.locator_params(nbins=len(callers) + 2, axis="y", tight=True)
+                    ax.set_yticklabels(callers, va="bottom")
+                    ax.text(100, 4.0, size_label, fontsize=10)
                 else:
                     ax.get_yaxis().set_ticks([])
                 for ai, (val, label) in enumerate(zip(vals, labels)):
-                    ax.annotate(label, (val + 1, ai + 0.35), va='center', size=7)
+                    ax.annotate(label, (val + 0.75, ai + 0.35), va='center', size=7)
         fig.set_size_inches(7, 6)
         fig.savefig(out_file)
     return out_file
